@@ -1,0 +1,13 @@
+[package]
+name = "yasysyc"
+version = "0.1.0"
+edition = "2024"
+
+[build-dependencies]
+lalrpop = "0.22.2"
+
+[dependencies]
+lalrpop-util = { version = "0.22.2", features = ["lexer"] }
+clap = { version = "4.5", features = ["derive"] }
+anyhow = "1.0.100"
+koopa = "0.0.9"
