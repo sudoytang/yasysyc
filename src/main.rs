@@ -64,9 +64,14 @@ fn main() -> Result<()> {
         .map_err(|e| anyhow::anyhow!("Failed to parse input: {}", e))?;
 
 
-    if cli.debug && !cli.koopa && !cli.riscv {
-        println!("{:#?}", ast);
-        return Ok(());
+    if !cli.koopa && !cli.riscv {
+        if cli.debug {
+            println!("{:#?}", ast);
+            return Ok(());
+        } else {
+            println!("{}", ast);
+            return Ok(());
+        }
     }
 
     let koopa_ir = ast.emit();

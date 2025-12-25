@@ -26,8 +26,24 @@ FuncDef: FuncDef = {
 
 FuncType: FuncType = "int" => FuncType::Int;
 Block: Block = "{" <stmt: Stmt> "}" => Block { stmt };
-Stmt: Stmt = "return" <num: Number> ";" => Stmt::Return(ReturnStmt { num });
-Number: Number = <num: IntConst> => num.into();
+Stmt: Stmt = "return" <expr: Expr> ";" => Stmt::Return(ReturnStmt { expr });
+
+Expr: Expr = UnaryExpr;
+UnaryExpr: Expr = {
+    PrimaryExpr,
+    <op: UnaryOp> <expr: UnaryExpr> => Expr::Unary(op, Box::new(expr)),
+}
+
+PrimaryExpr: Expr = {
+    <IntConst> => Expr::Number(<>),
+    "(" <Expr> ")" => <>
+}
+
+UnaryOp: UnaryOp = {
+    "+" => UnaryOp::Plus,
+    "-" => UnaryOp::Minus,
+    "!" => UnaryOp::Not,
+}
 
 Ident: Ident = r"[_a-zA-Z][_a-zA-Z0-9]*" => <>.to_string().into();
 IntConst: i32 = {

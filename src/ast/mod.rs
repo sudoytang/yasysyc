@@ -69,29 +69,12 @@ impl Display for Stmt {
 
 #[derive(Debug)]
 pub struct ReturnStmt {
-    pub num: Number,
+    pub expr: Expr,
 }
 
 impl Display for ReturnStmt {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "return {};", self.num)
-    }
-}
-
-#[derive(Debug)]
-pub struct Number {
-    pub value: i32,
-}
-
-impl From<i32> for Number {
-    fn from(value: i32) -> Self {
-        Number { value }
-    }
-}
-
-impl Display for Number {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.value)
+        write!(f, "return {};", self.expr)
     }
 }
 
@@ -109,5 +92,40 @@ impl From<String> for Ident {
 impl Display for Ident {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.value)
+    }
+}
+
+#[non_exhaustive]
+#[derive(Debug)]
+pub enum Expr {
+    Number(i32),
+    Unary(UnaryOp, Box<Expr>),
+}
+
+impl Display for Expr {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Number(number) => write!(f, "{}", number),
+            Self::Unary(unary_op, expr) => write!(f, "{}{}", unary_op, expr),
+        }
+    }
+}
+
+
+#[non_exhaustive]
+#[derive(Debug, Clone, Copy)]
+pub enum UnaryOp {
+    Plus,
+    Minus,
+    Not,
+}
+
+impl Display for UnaryOp {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Plus => write!(f, "+"),
+            Self::Minus => write!(f, "-"),
+            Self::Not => write!(f, "!"),
+        }
     }
 }

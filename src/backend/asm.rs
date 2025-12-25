@@ -21,19 +21,31 @@ impl Display for AsmLine {
 #[non_exhaustive]
 pub enum Instruction {
     Li { reg: Reg, imm: i32 },
+    // Arithmetic
+    Sub { rd: Reg, rs1: Reg, rs2: Reg },
+    // Logical
+    Seqz { rd: Reg, rs: Reg },  // set if equal to zero
+    Snez { rd: Reg, rs: Reg },  // set if not equal to zero
+    // Move
+    Mv { rd: Reg, rs: Reg },
+
     Ret,
-    // to be added
 }
 
 impl Display for Instruction {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Li { reg, imm } => write!(f, "  li {}, {}", reg, imm),
+            Self::Sub { rd, rs1, rs2 } => write!(f, "  sub {}, {}, {}", rd, rs1, rs2),
+            Self::Seqz { rd, rs } => write!(f, "  seqz {}, {}", rd, rs),
+            Self::Snez { rd, rs } => write!(f, "  snez {}, {}", rd, rs),
+            Self::Mv { rd, rs } => write!(f, "  mv {}, {}", rd, rs),
             Self::Ret => write!(f, "  ret"),
         }
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Reg {
     // Zero register
     Zero,
