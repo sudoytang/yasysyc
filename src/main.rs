@@ -2,6 +2,7 @@ use std::fs::read_to_string;
 use anyhow::Result;
 
 use clap::Parser;
+use koopa::back::KoopaGenerator;
 use lalrpop_util::lalrpop_mod;
 
 lalrpop_mod!(sysy);
@@ -24,7 +25,17 @@ struct Cli {
 
 
 fn main() -> Result<()> {
-    let cli = Cli::parse();
+    // let cli = Cli::parse();
+
+    // >>>> DEBUG
+    let debug_cli = Cli {
+        input: "test.c".into(),
+        output: None,
+        debug: false,
+    };
+
+    let cli = debug_cli;
+    // <<<< DEBUG
 
     let input = read_to_string(&cli.input)?;
 
@@ -35,7 +46,10 @@ fn main() -> Result<()> {
     let ir = if cli.debug {
         format!("{:#?}", ast)
     } else {
-        ast.to_string()
+        let ir =ast.emit();
+        let mut writer = Vec::new();
+        KoopaGenerator::new(&mut writer).generate_on(&ir)?;
+        String::from_utf8(writer)?
     };
 
     if let Some(output) = cli.output {

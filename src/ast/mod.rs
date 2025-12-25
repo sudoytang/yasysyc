@@ -1,3 +1,5 @@
+pub mod emit;
+
 use std::fmt::{self, Display};
 
 #[derive(Debug)]
@@ -10,7 +12,6 @@ impl Display for CompUnit {
         write!(f, "{}", self.func_def)
     }
 }
-
 
 #[derive(Debug)]
 pub struct FuncDef {
