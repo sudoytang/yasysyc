@@ -1,3 +1,6 @@
 /target
 /test.c
 *.koopa
+*.S
+*.asm
+*.s

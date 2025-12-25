@@ -4,6 +4,7 @@ use anyhow::Result;
 use clap::Parser;
 use koopa::back::KoopaGenerator;
 use lalrpop_util::lalrpop_mod;
+use yasysyc::backend::AsmGenerator;
 
 lalrpop_mod!(sysy);
 
@@ -63,7 +64,7 @@ fn main() -> Result<()> {
         .map_err(|e| anyhow::anyhow!("Failed to parse input: {}", e))?;
 
 
-    if cli.debug {
+    if cli.debug && !cli.koopa && !cli.riscv {
         println!("{:#?}", ast);
         return Ok(());
     }
@@ -83,7 +84,13 @@ fn main() -> Result<()> {
     }
 
     if cli.riscv {
-        unimplemented!()
+        let asm = AsmGenerator::generate(&koopa_ir);
+        if let Some(output) = cli.output {
+            std::fs::write(output, asm.as_bytes())?;
+        } else {
+            println!("{}", asm);
+        }
+        return Ok(());
     }
 
     Ok(())
