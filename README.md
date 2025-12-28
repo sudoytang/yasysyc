@@ -7,12 +7,15 @@ Yet Another SysY Compiler - A compiler for the SysY programming language written
 
 ## Overview
 
-yasysyc is a compiler frontend for SysY, a simplified C-like language. It currently supports parsing SysY source code and generating an Abstract Syntax Tree (AST).
+yasysyc is a compiler for SysY, a simplified C-like language. It supports parsing SysY source code, generating Koopa IR, and compiling to RISC-V assembly.
 
 ## Features
 
 - LALRPOP-based parser generator
 - AST generation and visualization
+- Koopa IR generation
+- RISC-V assembly code generation
+- Full expression support (unary, binary, comparison, logical operators)
 
 ## Installation
 
@@ -20,6 +23,7 @@ yasysyc is a compiler frontend for SysY, a simplified C-like language. It curren
 
 - Rust toolchain (edition 2024)
 - Cargo build system
+- (Optional) RISC-V toolchain for running generated assembly
 
 ### Build from Source
 
@@ -31,46 +35,86 @@ The compiled binary will be located at `target/release/yasysyc`.
 
 ## Usage
 
-### Basic Usage
+### Generate Koopa IR
 
 ```bash
-yasysyc <input-file>
+yasysyc --koopa <input-file> -o <output-file>
 ```
 
-This will parse the input file and print the AST to stdout.
-
-### Output to File
+### Generate RISC-V Assembly
 
 ```bash
-yasysyc <input-file> -o <output-file>
-# or
-yasysyc <input-file> --output <output-file>
+yasysyc --riscv <input-file> -o <output-file>
 ```
 
-### Debug Mode
+### Output to stdout
 
 ```bash
-yasysyc <input-file> --debug
-```
+# Koopa IR to stdout
+yasysyc --koopa <input-file>
 
-Debug mode prints a detailed, formatted AST representation using Rust's `{:#?}` formatting.
+# RISC-V assembly to stdout
+yasysyc --riscv <input-file>
+```
 
 ### Examples
 
 ```bash
-# Parse and print to stdout
-yasysyc test.c
+# Generate Koopa IR
+yasysyc --koopa test.c -o test.koopa
 
-# Parse and save to file
-yasysyc test.c -o output.txt
+# Generate RISC-V assembly
+yasysyc --riscv test.c -o test.S
 
-# Parse and print detailed debug AST
-yasysyc test.c --debug
+# Print RISC-V assembly to stdout
+yasysyc --riscv test.c
 ```
 
-## Grammar (EBNF)
+## Supported Operators
 
-The current implementation supports a 'hello-world-like' minimal subset of SysY:
+### Unary Operators
+| Operator | Description |
+|----------|-------------|
+| `+` | Unary plus |
+| `-` | Unary minus (negation) |
+| `!` | Logical NOT |
+
+### Binary Operators
+| Operator | Description |
+|----------|-------------|
+| `+` | Addition |
+| `-` | Subtraction |
+| `*` | Multiplication |
+| `/` | Division |
+| `%` | Modulo |
+
+### Comparison Operators
+| Operator | Description |
+|----------|-------------|
+| `<` | Less than |
+| `>` | Greater than |
+| `<=` | Less than or equal |
+| `>=` | Greater than or equal |
+| `==` | Equal |
+| `!=` | Not equal |
+
+### Logical Operators
+| Operator | Description |
+|----------|-------------|
+| `&&` | Logical AND |
+| `\|\|` | Logical OR |
+
+## Operator Precedence (lowest to highest)
+
+1. `||` (Logical OR)
+2. `&&` (Logical AND)
+3. `==`, `!=` (Equality)
+4. `<`, `>`, `<=`, `>=` (Relational)
+5. `+`, `-` (Additive)
+6. `*`, `/`, `%` (Multiplicative)
+7. `+`, `-`, `!` (Unary)
+
+## Grammar (EBNF)
 
 ```ebnf
 CompUnit      ::= FuncDef
@@ -81,7 +125,25 @@ FuncType      ::= "int"
 
 Block         ::= "{" Stmt "}"
 
-Stmt          ::= "return" Number ";"
+Stmt          ::= "return" Expr ";"
+
+Expr          ::= LogicOrExpr
+
+LogicOrExpr   ::= LogicAndExpr | LogicOrExpr "||" LogicAndExpr
+
+LogicAndExpr  ::= EqExpr | LogicAndExpr "&&" EqExpr
+
+EqExpr        ::= RelExpr | EqExpr ("==" | "!=") RelExpr
+
+RelExpr       ::= AddExpr | RelExpr ("<" | ">" | "<=" | ">=") AddExpr
+
+AddExpr       ::= MulExpr | AddExpr ("+" | "-") MulExpr
+
+MulExpr       ::= UnaryExpr | MulExpr ("*" | "/" | "%") UnaryExpr
+
+UnaryExpr     ::= PrimaryExpr | ("+" | "-" | "!") UnaryExpr
+
+PrimaryExpr   ::= Number | "(" Expr ")"
 
 Number        ::= IntConst
 
@@ -111,51 +173,74 @@ HexConst      ::= 0[xX][0-9a-fA-F]+
 
 ```c
 int main() {
-    // this is a line comment
-    /* this is a block comment */
-    return 0;
+    return 1 + 2 * 3 < 10 && 5 >= 5;
 }
 ```
 
-Output (normal mode):
+Generated RISC-V assembly:
+```asm
+.text
+.globl main
+main:
+  addi sp, sp, -32
+  li t0, 2
+  li t1, 3
+  mul t2, t0, t1
+  sw t2, 0(sp)
+  li t0, 1
+  lw t1, 0(sp)
+  add t2, t0, t1
+  sw t2, 4(sp)
+  lw t0, 4(sp)
+  li t1, 10
+  slt t2, t0, t1
+  ...
 ```
-int main() { return 0; }
-```
 
-## AST Structure
+## Code Generation Notes
 
-The AST consists of the following node types:
+### RISC-V Implementation Details
 
-- `CompUnit`: Root node containing a function definition
-- `FuncDef`: Function definition with type, identifier, and block
-- `FuncType`: Currently only `Int` is supported
-- `Block`: Contains a single statement
-- `Stmt`: Statement enum (currently only `Return`)
-- `ReturnStmt`: Return statement with a number
-- `Number`: Integer value wrapper
-- `Ident`: Identifier wrapper
+Since RISC-V only provides `slt` (set less than) for comparison, other comparisons are implemented as:
 
-All AST nodes implement `Display` for pretty-printing and `Debug` for detailed inspection.
+| Operation | RISC-V Implementation |
+|-----------|----------------------|
+| `a < b` | `slt rd, a, b` |
+| `a > b` | `slt rd, b, a` (swap operands) |
+| `a <= b` | `slt rd, b, a; xori rd, rd, 1` |
+| `a >= b` | `slt rd, a, b; xori rd, rd, 1` |
+| `a == b` | `sub rd, a, b; seqz rd, rd` |
+| `a != b` | `sub rd, a, b; snez rd, rd` |
+
+Logical operators return 0 or 1:
+- `a && b` → `snez t0, a; snez t1, b; and rd, t0, t1`
+- `a || b` → `or rd, a, b; snez rd, rd`
+
+### Koopa IR Notes
+
+Koopa IR only supports bitwise AND/OR, so logical operators are transformed:
+- `a || b` → `(a | b) != 0`
+- `a && b` → `(a != 0) & (b != 0)`
 
 ## Dependencies
 
 - [lalrpop](https://github.com/lalrpop/lalrpop) - Parser generator
 - [clap](https://github.com/clap-rs/clap) - Command-line argument parser
 - [anyhow](https://github.com/dtolnay/anyhow) - Error handling
-- [koopa](https://github.com/pku-minic/koopa) - Koopa IR support (planned)
+- [koopa](https://github.com/pku-minic/koopa) - Koopa IR library
 
 ## Current Limitations
 
 - Only supports a single function definition per compilation unit
 - Only `int` return type is supported
-- Only `return` statements with integer literals are supported
+- Only `return` statements are supported (no other control flow)
 - No support for:
   - Variables
-  - Expressions
-  - Control flow statements
+  - Control flow statements (if, while, for)
   - Multiple functions
   - Function parameters
   - Global declarations
+  - Arrays
 
 ## Development
 
@@ -171,6 +256,8 @@ cargo build
 cargo test
 ```
 
+The E2E tests use differential testing against GCC/spike to verify correctness.
+
 ### Generating Parser
 
 The parser is automatically generated from `src/sysy.lalrpop` during the build process via the `build.rs` script.
@@ -181,26 +268,21 @@ The parser is automatically generated from `src/sysy.lalrpop` during the build p
 
 - ✅ Project structure and build system setup
 - ✅ LALRPOP parser integration
-- ✅ Basic lexical analysis
-  - Whitespace and comment skipping (line comments `//`, block comments `/* */`)
-  - Identifier recognition
-  - Integer literal parsing (decimal, octal, hexadecimal)
-- ✅ AST data structures
-  - `CompUnit`, `FuncDef`, `FuncType`, `Block`, `Stmt`, `ReturnStmt`, `Number`, `Ident`
-  - `Display` trait implementation for AST pretty-printing
-  - `Debug` trait for detailed AST inspection
-- ✅ Minimal grammar support
-  - Single function definition with `int` return type
-  - Parameter-less function
-  - Single return statement with integer literal
-- ✅ CLI interface
-  - Input file parsing
-  - Optional output file
-  - Debug mode for AST visualization
+- ✅ Lexical analysis (whitespace, comments, identifiers, integers)
+- ✅ AST data structures with Display/Debug traits
+- ✅ Unary expressions (`+`, `-`, `!`)
+- ✅ Binary expressions (`+`, `-`, `*`, `/`, `%`)
+- ✅ Comparison expressions (`<`, `>`, `<=`, `>=`, `==`, `!=`)
+- ✅ Logical expressions (`&&`, `||`)
+- ✅ Parenthesized expressions
+- ✅ Operator precedence
+- ✅ Koopa IR generation
+- ✅ RISC-V assembly generation
+- ✅ Stack-based register allocation
+- ✅ E2E test framework
 
 ### Not Yet Implemented
 
-- ❌ Expression parsing (arithmetic, logical, relational)
 - ❌ Variable declarations and references
 - ❌ Function parameters and arguments
 - ❌ Control flow statements (if, while, for, break, continue)
@@ -208,19 +290,4 @@ The parser is automatically generated from `src/sysy.lalrpop` during the build p
 - ❌ Multiple function definitions
 - ❌ Global variable declarations
 - ❌ Arrays
-- ❌ IR generation
-- ❌ Code generation
-
-## Changelog
-
-### v0.1.0 (Initial Implementation)
-
-**Added:**
-- Basic project structure with Cargo configuration
-- LALRPOP parser generator integration via `build.rs`
-- Lexer rules for comments, identifiers, and integer literals
-- Minimal SysY grammar supporting single-function programs
-- AST node definitions with display formatting
-- CLI tool with clap for command-line argument parsing
-- Debug mode for detailed AST output
-- Support for decimal, octal, and hexadecimal integer literals
+- ❌ Advanced register allocation
