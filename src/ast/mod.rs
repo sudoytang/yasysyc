@@ -100,6 +100,7 @@ impl Display for Ident {
 pub enum Expr {
     Number(i32),
     Unary(UnaryOp, Box<Expr>),
+    Binary(Box<Expr>, BinaryOp, Box<Expr>),
 }
 
 impl Display for Expr {
@@ -107,6 +108,9 @@ impl Display for Expr {
         match self {
             Self::Number(number) => write!(f, "{}", number),
             Self::Unary(unary_op, expr) => write!(f, "{}{}", unary_op, expr),
+            Self::Binary(lhs, op, rhs) => write!(f, "({} {} {})", lhs, op, rhs),
+            // TODO: we don't know the precedence of binary operations and we are lazy
+            // so that a pair of parentheses is added.
         }
     }
 }
@@ -126,6 +130,28 @@ impl Display for UnaryOp {
             Self::Plus => write!(f, "+"),
             Self::Minus => write!(f, "-"),
             Self::Not => write!(f, "!"),
+        }
+    }
+}
+
+#[non_exhaustive]
+#[derive(Debug, Clone, Copy)]
+pub enum BinaryOp {
+    Add,
+    Sub,
+    Mul,
+    Div,
+    Mod,
+}
+
+impl Display for BinaryOp {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Add => write!(f, "+"),
+            Self::Sub => write!(f, "-"),
+            Self::Mul => write!(f, "*"),
+            Self::Div => write!(f, "/"),
+            Self::Mod => write!(f, "%"),
         }
     }
 }

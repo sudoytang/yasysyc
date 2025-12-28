@@ -22,12 +22,20 @@ impl Display for AsmLine {
 pub enum Instruction {
     Li { reg: Reg, imm: i32 },
     // Arithmetic
+    Add { rd: Reg, rs1: Reg, rs2: Reg },
+    Addi { rd: Reg, rs: Reg, imm: i32 },
     Sub { rd: Reg, rs1: Reg, rs2: Reg },
+    Mul { rd: Reg, rs1: Reg, rs2: Reg },
+    Div { rd: Reg, rs1: Reg, rs2: Reg },
+    Rem { rd: Reg, rs1: Reg, rs2: Reg },
     // Logical
     Seqz { rd: Reg, rs: Reg },  // set if equal to zero
     Snez { rd: Reg, rs: Reg },  // set if not equal to zero
     // Move
     Mv { rd: Reg, rs: Reg },
+    // Memory
+    Lw { rd: Reg, offset: i32, base: Reg },
+    Sw { rs: Reg, offset: i32, base: Reg },
 
     Ret,
 }
@@ -36,10 +44,17 @@ impl Display for Instruction {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Li { reg, imm } => write!(f, "  li {}, {}", reg, imm),
+            Self::Add { rd, rs1, rs2 } => write!(f, "  add {}, {}, {}", rd, rs1, rs2),
+            Self::Addi { rd, rs, imm } => write!(f, "  addi {}, {}, {}", rd, rs, imm),
             Self::Sub { rd, rs1, rs2 } => write!(f, "  sub {}, {}, {}", rd, rs1, rs2),
+            Self::Mul { rd, rs1, rs2 } => write!(f, "  mul {}, {}, {}", rd, rs1, rs2),
+            Self::Div { rd, rs1, rs2 } => write!(f, "  div {}, {}, {}", rd, rs1, rs2),
+            Self::Rem { rd, rs1, rs2 } => write!(f, "  rem {}, {}, {}", rd, rs1, rs2),
             Self::Seqz { rd, rs } => write!(f, "  seqz {}, {}", rd, rs),
             Self::Snez { rd, rs } => write!(f, "  snez {}, {}", rd, rs),
             Self::Mv { rd, rs } => write!(f, "  mv {}, {}", rd, rs),
+            Self::Lw { rd, offset, base } => write!(f, "  lw {}, {}({})", rd, offset, base),
+            Self::Sw { rs, offset, base } => write!(f, "  sw {}, {}({})", rs, offset, base),
             Self::Ret => write!(f, "  ret"),
         }
     }

@@ -96,6 +96,26 @@ impl Expr {
                     }
                 }
             }
+            Self::Binary(lhs, op, rhs) => {
+                let lhs = lhs.emit(func, bb);
+                let rhs = rhs.emit(func, bb);
+                let op = op.emit();
+                let value = func.dfg_mut().new_value().binary(op, lhs, rhs);
+                func.layout_mut().bb_mut(bb).insts_mut().push_key_back(value).unwrap();
+                value
+            }
+        }
+    }
+}
+
+impl BinaryOp {
+    pub fn emit(&self) -> koopa::ir::BinaryOp {
+        match self {
+            Self::Add => koopa::ir::BinaryOp::Add,
+            Self::Sub => koopa::ir::BinaryOp::Sub,
+            Self::Mul => koopa::ir::BinaryOp::Mul,
+            Self::Div => koopa::ir::BinaryOp::Div,
+            Self::Mod => koopa::ir::BinaryOp::Mod,
         }
     }
 }

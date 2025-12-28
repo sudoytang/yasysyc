@@ -1,30 +1,51 @@
 pub mod asm;
+pub mod regalloc;
 
 use asm::AsmLine;
 use asm::Directive;
+use asm::Instruction;
+use asm::Reg;
 use asm::Section;
 use koopa::ir::*;
-use std::collections::HashMap;
+use regalloc::{Location, RegisterAllocator, StackAllocator};
 
-pub struct AsmGenerator {
+pub struct AsmGenerator<A: RegisterAllocator> {
     output: Vec<AsmLine>,
-    // Map from Koopa IR Value to register
-    value_reg_map: HashMap<Value, asm::Reg>,
-    // Next available temporary register index
-    next_temp_reg: usize,
+    allocator: A,
 }
 
-impl AsmGenerator {
+impl AsmGenerator<StackAllocator> {
+    /// Create a new AsmGenerator with the default StackAllocator
     pub fn new() -> Self {
+        Self::with_allocator(StackAllocator::new())
+    }
+
+    /// Convenience method to generate assembly using the default allocator
+    pub fn generate(program: &Program) -> String {
+        let mut generator = Self::new();
+        generator.visit_program(program);
+        generator.to_string()
+    }
+}
+
+impl Default for AsmGenerator<StackAllocator> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl<A: RegisterAllocator> AsmGenerator<A> {
+    /// Create a new AsmGenerator with a custom allocator
+    pub fn with_allocator(allocator: A) -> Self {
         Self {
             output: Vec::new(),
-            value_reg_map: HashMap::new(),
-            next_temp_reg: 0,
+            allocator,
         }
     }
 
-    pub fn generate(program: &Program) -> String {
-        let mut generator = Self::new();
+    /// Generate assembly using a custom allocator
+    pub fn generate_with_allocator(program: &Program, allocator: A) -> String {
+        let mut generator = Self::with_allocator(allocator);
         generator.visit_program(program);
         generator.to_string()
     }
@@ -37,29 +58,128 @@ impl AsmGenerator {
             .join("\n")
     }
 
-    // Allocate a temporary register for a value
-    fn alloc_temp_reg(&mut self, value: Value) -> asm::Reg {
-        let reg = match self.next_temp_reg {
-            0 => asm::Reg::T0,
-            1 => asm::Reg::T1,
-            2 => asm::Reg::T2,
-            3 => asm::Reg::T3,
-            4 => asm::Reg::T4,
-            5 => asm::Reg::T5,
-            6 => asm::Reg::T6,
-            _ => panic!("Out of temporary registers"),
-        };
-        self.next_temp_reg += 1;
-        self.value_reg_map.insert(value, reg);
-        reg
+    /// Emit an instruction
+    fn emit(&mut self, inst: Instruction) {
+        self.output.push(AsmLine::Instruction(inst));
     }
 
-    // Get the register for a value (or allocate one)
-    fn get_or_alloc_reg(&mut self, value: Value) -> asm::Reg {
-        if let Some(&reg) = self.value_reg_map.get(&value) {
-            reg
-        } else {
-            self.alloc_temp_reg(value)
+    /// Store a register value to the location allocated for a given IR value
+    fn store_value(&mut self, value: Value, reg: Reg) {
+        match self.allocator.alloc(value) {
+            Location::Stack(offset) => {
+                self.emit(Instruction::Sw {
+                    rs: reg,
+                    offset,
+                    base: Reg::Sp,
+                });
+            }
+            Location::Register(dest) => {
+                if dest != reg {
+                    self.emit(Instruction::Mv { rd: dest, rs: reg });
+                }
+            }
+            Location::Immediate(_) => {
+                panic!("Cannot store to an immediate location");
+            }
+        }
+    }
+
+    /// Load a value into a register, emitting necessary instructions
+    fn load_value(&mut self, func: &FunctionData, value: Value, dest_reg: Reg) -> Reg {
+        let value_data = func.dfg().value(value);
+
+        use koopa::ir::ValueKind;
+        match value_data.kind() {
+            ValueKind::Integer(int_val) => {
+                let imm = int_val.value();
+
+                if imm == 0 {
+                    return Reg::Zero;
+                }
+
+                self.emit(Instruction::Li { reg: dest_reg, imm });
+                dest_reg
+            }
+            _ => {
+                match self.allocator.locate(value) {
+                    Some(Location::Stack(offset)) => {
+                        self.emit(Instruction::Lw {
+                            rd: dest_reg,
+                            offset,
+                            base: Reg::Sp,
+                        });
+                        dest_reg
+                    }
+                    Some(Location::Register(reg)) => {
+                        if reg != dest_reg {
+                            self.emit(Instruction::Mv {
+                                rd: dest_reg,
+                                rs: reg,
+                            });
+                            dest_reg
+                        } else {
+                            reg
+                        }
+                    }
+                    Some(Location::Immediate(imm)) => {
+                        if imm == 0 {
+                            Reg::Zero
+                        } else {
+                            self.emit(Instruction::Li { reg: dest_reg, imm });
+                            dest_reg
+                        }
+                    }
+                    None => panic!("Value not found in allocator"),
+                }
+            }
+        }
+    }
+
+    /// Load a value for return, with stack pointer already restored
+    fn load_value_for_return(
+        &mut self,
+        func: &FunctionData,
+        value: Value,
+        stack_size: i32,
+    ) -> Reg {
+        let value_data = func.dfg().value(value);
+
+        use koopa::ir::ValueKind;
+        match value_data.kind() {
+            ValueKind::Integer(int_val) => {
+                let imm = int_val.value();
+
+                if imm == 0 {
+                    return Reg::Zero;
+                }
+
+                self.emit(Instruction::Li { reg: Reg::T0, imm });
+                Reg::T0
+            }
+            _ => {
+                match self.allocator.locate(value) {
+                    Some(Location::Stack(offset)) => {
+                        // After epilogue (sp += stack_size), adjust offset
+                        let adjusted_offset = offset - stack_size;
+                        self.emit(Instruction::Lw {
+                            rd: Reg::T0,
+                            offset: adjusted_offset,
+                            base: Reg::Sp,
+                        });
+                        Reg::T0
+                    }
+                    Some(Location::Register(reg)) => reg,
+                    Some(Location::Immediate(imm)) => {
+                        if imm == 0 {
+                            Reg::Zero
+                        } else {
+                            self.emit(Instruction::Li { reg: Reg::T0, imm });
+                            Reg::T0
+                        }
+                    }
+                    None => panic!("Value not found in allocator"),
+                }
+            }
         }
     }
 
@@ -74,166 +194,157 @@ impl AsmGenerator {
         // Strip @ prefix from function name for assembly
         let func_name = func.name().strip_prefix('@').unwrap_or(func.name());
 
-        self.output.push(AsmLine::Directive(Directive::Section(Section::Text)));
-        self.output.push(AsmLine::Directive(Directive::Global(func_name.to_string())));
+        self.output
+            .push(AsmLine::Directive(Directive::Section(Section::Text)));
+        self.output
+            .push(AsmLine::Directive(Directive::Global(func_name.to_string())));
         self.output.push(AsmLine::Label(func_name.to_string()));
 
-        // Reset register allocation for each function
-        self.value_reg_map.clear();
-        self.next_temp_reg = 0;
+        // Reset and analyze for this function
+        self.allocator.reset();
+        self.allocator.analyze(func);
 
+        let stack_size = self.allocator.stack_size();
+
+        // Emit prologue: allocate stack frame
+        if stack_size > 0 {
+            self.emit(Instruction::Addi {
+                rd: Reg::Sp,
+                rs: Reg::Sp,
+                imm: -stack_size,
+            });
+        }
+
+        // Generate code for all instructions
         for (_bb, node) in func.layout().bbs() {
             for inst in node.insts().keys() {
-                self.visit_instruction(func, inst);
+                self.visit_instruction(func, inst, stack_size);
             }
         }
     }
 
-    pub fn visit_instruction(&mut self, func: &FunctionData, inst: &Value) {
-        // Get instruction data
+    pub fn visit_instruction(&mut self, func: &FunctionData, inst: &Value, stack_size: i32) {
         let value_data = func.dfg().value(*inst);
 
         use koopa::ir::ValueKind;
         match value_data.kind() {
             ValueKind::Binary(binary) => {
-                // Get operands
                 let lhs = binary.lhs();
                 let rhs = binary.rhs();
 
-                // Generate instruction based on operator
                 use koopa::ir::BinaryOp;
                 match binary.op() {
+                    BinaryOp::Add => {
+                        let lhs_reg = self.load_value(func, lhs, Reg::T0);
+                        let rhs_reg = self.load_value(func, rhs, Reg::T1);
+                        self.emit(Instruction::Add {
+                            rd: Reg::T2,
+                            rs1: lhs_reg,
+                            rs2: rhs_reg,
+                        });
+                        self.store_value(*inst, Reg::T2);
+                    }
                     BinaryOp::Sub => {
-                        // Check if lhs is 0 (unary negation: -x = 0 - x)
-                        let lhs_data = func.dfg().value(lhs);
-                        let is_lhs_zero = matches!(lhs_data.kind(),
-                            ValueKind::Integer(i) if i.value() == 0);
-
-                        if is_lhs_zero {
-                            // Unary negation: sub rd, zero, rs
-                            let rs = self.load_value(func, rhs);
-
-                            // Can't modify zero register, need to allocate if rs is zero
-                            if matches!(rs, asm::Reg::Zero) {
-                                let rd = self.alloc_temp_reg(*inst);
-                                self.output.push(AsmLine::Instruction(
-                                    asm::Instruction::Sub { rd, rs1: asm::Reg::Zero, rs2: rs }
-                                ));
-                            } else {
-                                // In-place optimization: reuse rs as rd
-                                self.value_reg_map.insert(*inst, rs);
-                                self.output.push(AsmLine::Instruction(
-                                    asm::Instruction::Sub { rd: rs, rs1: asm::Reg::Zero, rs2: rs }
-                                ));
-                            }
-                        } else {
-                            // Binary subtraction: need to allocate new register
-                            let lhs_reg = self.load_value(func, lhs);
-                            let rhs_reg = self.load_value(func, rhs);
-                            let rd = self.alloc_temp_reg(*inst);
-                            self.output.push(AsmLine::Instruction(
-                                asm::Instruction::Sub { rd, rs1: lhs_reg, rs2: rhs_reg }
-                            ));
-                        }
+                        let lhs_reg = self.load_value(func, lhs, Reg::T0);
+                        let rhs_reg = self.load_value(func, rhs, Reg::T1);
+                        self.emit(Instruction::Sub {
+                            rd: Reg::T2,
+                            rs1: lhs_reg,
+                            rs2: rhs_reg,
+                        });
+                        self.store_value(*inst, Reg::T2);
+                    }
+                    BinaryOp::Mul => {
+                        let lhs_reg = self.load_value(func, lhs, Reg::T0);
+                        let rhs_reg = self.load_value(func, rhs, Reg::T1);
+                        self.emit(Instruction::Mul {
+                            rd: Reg::T2,
+                            rs1: lhs_reg,
+                            rs2: rhs_reg,
+                        });
+                        self.store_value(*inst, Reg::T2);
+                    }
+                    BinaryOp::Div => {
+                        let lhs_reg = self.load_value(func, lhs, Reg::T0);
+                        let rhs_reg = self.load_value(func, rhs, Reg::T1);
+                        self.emit(Instruction::Div {
+                            rd: Reg::T2,
+                            rs1: lhs_reg,
+                            rs2: rhs_reg,
+                        });
+                        self.store_value(*inst, Reg::T2);
+                    }
+                    BinaryOp::Mod => {
+                        let lhs_reg = self.load_value(func, lhs, Reg::T0);
+                        let rhs_reg = self.load_value(func, rhs, Reg::T1);
+                        self.emit(Instruction::Rem {
+                            rd: Reg::T2,
+                            rs1: lhs_reg,
+                            rs2: rhs_reg,
+                        });
+                        self.store_value(*inst, Reg::T2);
                     }
                     BinaryOp::Eq => {
-                        // Check if rhs is 0 (comparison with zero: x == 0)
-                        let rhs_data = func.dfg().value(rhs);
-                        let is_rhs_zero = matches!(rhs_data.kind(),
-                            ValueKind::Integer(i) if i.value() == 0);
-
-                        if is_rhs_zero {
-                            // x == 0 => seqz rd, rs
-                            let rs = self.load_value(func, lhs);
-
-                            // Can't modify zero register, need to allocate if rs is zero
-                            if matches!(rs, asm::Reg::Zero) {
-                                let rd = self.alloc_temp_reg(*inst);
-                                self.output.push(AsmLine::Instruction(
-                                    asm::Instruction::Seqz { rd, rs }
-                                ));
-                            } else {
-                                // In-place optimization: reuse rs as rd
-                                self.value_reg_map.insert(*inst, rs);
-                                self.output.push(AsmLine::Instruction(
-                                    asm::Instruction::Seqz { rd: rs, rs }
-                                ));
-                            }
-                        } else {
-                            // General case: sub then seqz
-                            let lhs_reg = self.load_value(func, lhs);
-                            let rhs_reg = self.load_value(func, rhs);
-                            let rd = self.alloc_temp_reg(*inst);
-                            self.output.push(AsmLine::Instruction(
-                                asm::Instruction::Sub { rd, rs1: lhs_reg, rs2: rhs_reg }
-                            ));
-                            self.output.push(AsmLine::Instruction(
-                                asm::Instruction::Seqz { rd, rs: rd }
-                            ));
-                        }
+                        let lhs_reg = self.load_value(func, lhs, Reg::T0);
+                        let rhs_reg = self.load_value(func, rhs, Reg::T1);
+                        // x == y => sub t2, t0, t1; seqz t2, t2
+                        self.emit(Instruction::Sub {
+                            rd: Reg::T2,
+                            rs1: lhs_reg,
+                            rs2: rhs_reg,
+                        });
+                        self.emit(Instruction::Seqz {
+                            rd: Reg::T2,
+                            rs: Reg::T2,
+                        });
+                        self.store_value(*inst, Reg::T2);
+                    }
+                    BinaryOp::NotEq => {
+                        let lhs_reg = self.load_value(func, lhs, Reg::T0);
+                        let rhs_reg = self.load_value(func, rhs, Reg::T1);
+                        // x != y => sub t2, t0, t1; snez t2, t2
+                        self.emit(Instruction::Sub {
+                            rd: Reg::T2,
+                            rs1: lhs_reg,
+                            rs2: rhs_reg,
+                        });
+                        self.emit(Instruction::Snez {
+                            rd: Reg::T2,
+                            rs: Reg::T2,
+                        });
+                        self.store_value(*inst, Reg::T2);
                     }
                     _ => unimplemented!("Unsupported binary operator: {:?}", binary.op()),
                 }
             }
             ValueKind::Return(ret_val) => {
+                // Emit epilogue before return
+                if stack_size > 0 {
+                    self.emit(Instruction::Addi {
+                        rd: Reg::Sp,
+                        rs: Reg::Sp,
+                        imm: stack_size,
+                    });
+                }
+
                 // If there is a return value
                 if let Some(val_handle) = ret_val.value() {
-                    // Load return value into a0
-                    let val_reg = self.load_value(func, val_handle);
+                    // Load return value into t0, then move to a0
+                    let val_reg = self.load_value_for_return(func, val_handle, stack_size);
 
                     // Move to a0 if not already there
-                    if !matches!(val_reg, asm::Reg::A0) {
-                        self.output.push(AsmLine::Instruction(
-                            asm::Instruction::Mv {
-                                rd: asm::Reg::A0,
-                                rs: val_reg,
-                            }
-                        ));
+                    if !matches!(val_reg, Reg::A0) {
+                        self.emit(Instruction::Mv {
+                            rd: Reg::A0,
+                            rs: val_reg,
+                        });
                     }
                 }
+
                 // ret instruction
-                self.output.push(AsmLine::Instruction(asm::Instruction::Ret));
+                self.emit(Instruction::Ret);
             }
             _ => unimplemented!("Unsupported instruction: {:?}", value_data.kind()),
-        }
-    }
-
-    // Load a value into a register
-    fn load_value(&mut self, func: &FunctionData, value: Value) -> asm::Reg {
-        let value_data = func.dfg().value(value);
-
-        use koopa::ir::ValueKind;
-        match value_data.kind() {
-            ValueKind::Integer(int_val) => {
-                let imm = int_val.value();
-
-                // Optimization: use zero register for 0
-                if imm == 0 {
-                    return asm::Reg::Zero;
-                }
-
-                // Constant: load into a new temp register
-                let reg = match self.next_temp_reg {
-                    0 => asm::Reg::T0,
-                    1 => asm::Reg::T1,
-                    2 => asm::Reg::T2,
-                    3 => asm::Reg::T3,
-                    4 => asm::Reg::T4,
-                    5 => asm::Reg::T5,
-                    6 => asm::Reg::T6,
-                    _ => panic!("Out of temporary registers"),
-                };
-                self.next_temp_reg += 1;
-
-                self.output.push(AsmLine::Instruction(
-                    asm::Instruction::Li { reg, imm }
-                ));
-                reg
-            }
-            _ => {
-                // Already computed value: get its register
-                self.get_or_alloc_reg(value)
-            }
         }
     }
 }

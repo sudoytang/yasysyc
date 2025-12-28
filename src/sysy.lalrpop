@@ -28,7 +28,21 @@ FuncType: FuncType = "int" => FuncType::Int;
 Block: Block = "{" <stmt: Stmt> "}" => Block { stmt };
 Stmt: Stmt = "return" <expr: Expr> ";" => Stmt::Return(ReturnStmt { expr });
 
-Expr: Expr = UnaryExpr;
+Expr: Expr = AddExpr;
+
+AddExpr: Expr = {
+    MulExpr,
+    <e1: AddExpr> "+" <e2: MulExpr> => Expr::Binary(Box::new(e1), BinaryOp::Add, Box::new(e2)),
+    <e1: AddExpr> "-" <e2: MulExpr> => Expr::Binary(Box::new(e1), BinaryOp::Sub, Box::new(e2)),
+}
+
+MulExpr: Expr = {
+    UnaryExpr,
+    <e1: MulExpr> "*" <e2: UnaryExpr> => Expr::Binary(Box::new(e1), BinaryOp::Mul, Box::new(e2)),
+    <e1: MulExpr> "/" <e2: UnaryExpr> => Expr::Binary(Box::new(e1), BinaryOp::Div, Box::new(e2)),
+    <e1: MulExpr> "%" <e2: UnaryExpr> => Expr::Binary(Box::new(e1), BinaryOp::Mod, Box::new(e2)),
+}
+
 UnaryExpr: Expr = {
     PrimaryExpr,
     <op: UnaryOp> <expr: UnaryExpr> => Expr::Unary(op, Box::new(expr)),
