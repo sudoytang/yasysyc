@@ -142,6 +142,14 @@ pub enum BinaryOp {
     Mul,
     Div,
     Mod,
+    Or,
+    And,
+    Eq,
+    Ne,
+    Lt,
+    Gt,
+    Le,
+    Ge,
 }
 
 impl Display for BinaryOp {
@@ -152,6 +160,14 @@ impl Display for BinaryOp {
             Self::Mul => write!(f, "*"),
             Self::Div => write!(f, "/"),
             Self::Mod => write!(f, "%"),
+            Self::Or => write!(f, "||"),
+            Self::And => write!(f, "&&"),
+            Self::Eq => write!(f, "=="),
+            Self::Ne => write!(f, "!="),
+            Self::Lt => write!(f, "<"),
+            Self::Gt => write!(f, ">"),
+            Self::Le => write!(f, "<="),
+            Self::Ge => write!(f, ">="),
         }
     }
 }

@@ -97,12 +97,39 @@ impl Expr {
                 }
             }
             Self::Binary(lhs, op, rhs) => {
-                let lhs = lhs.emit(func, bb);
-                let rhs = rhs.emit(func, bb);
-                let op = op.emit();
-                let value = func.dfg_mut().new_value().binary(op, lhs, rhs);
-                func.layout_mut().bb_mut(bb).insts_mut().push_key_back(value).unwrap();
-                value
+                let lhs_val = lhs.emit(func, bb);
+                let rhs_val = rhs.emit(func, bb);
+
+                // Special handling for logical operators (Koopa IR only has bitwise Or/And)
+                match op {
+                    BinaryOp::Or => {
+                        // a || b => (a | b) != 0
+                        let or_val = func.dfg_mut().new_value().binary(koopa::ir::BinaryOp::Or, lhs_val, rhs_val);
+                        func.layout_mut().bb_mut(bb).insts_mut().push_key_back(or_val).unwrap();
+                        let zero = func.dfg_mut().new_value().integer(0);
+                        let result = func.dfg_mut().new_value().binary(koopa::ir::BinaryOp::NotEq, or_val, zero);
+                        func.layout_mut().bb_mut(bb).insts_mut().push_key_back(result).unwrap();
+                        result
+                    }
+                    BinaryOp::And => {
+                        // a && b => (a != 0) & (b != 0)
+                        let zero = func.dfg_mut().new_value().integer(0);
+                        let lhs_bool = func.dfg_mut().new_value().binary(koopa::ir::BinaryOp::NotEq, lhs_val, zero);
+                        func.layout_mut().bb_mut(bb).insts_mut().push_key_back(lhs_bool).unwrap();
+                        let zero2 = func.dfg_mut().new_value().integer(0);
+                        let rhs_bool = func.dfg_mut().new_value().binary(koopa::ir::BinaryOp::NotEq, rhs_val, zero2);
+                        func.layout_mut().bb_mut(bb).insts_mut().push_key_back(rhs_bool).unwrap();
+                        let result = func.dfg_mut().new_value().binary(koopa::ir::BinaryOp::And, lhs_bool, rhs_bool);
+                        func.layout_mut().bb_mut(bb).insts_mut().push_key_back(result).unwrap();
+                        result
+                    }
+                    _ => {
+                        let ir_op = op.emit();
+                        let value = func.dfg_mut().new_value().binary(ir_op, lhs_val, rhs_val);
+                        func.layout_mut().bb_mut(bb).insts_mut().push_key_back(value).unwrap();
+                        value
+                    }
+                }
             }
         }
     }
@@ -116,6 +143,14 @@ impl BinaryOp {
             Self::Mul => koopa::ir::BinaryOp::Mul,
             Self::Div => koopa::ir::BinaryOp::Div,
             Self::Mod => koopa::ir::BinaryOp::Mod,
+            Self::Or => koopa::ir::BinaryOp::Or,
+            Self::And => koopa::ir::BinaryOp::And,
+            Self::Eq => koopa::ir::BinaryOp::Eq,
+            Self::Ne => koopa::ir::BinaryOp::NotEq,
+            Self::Lt => koopa::ir::BinaryOp::Lt,
+            Self::Gt => koopa::ir::BinaryOp::Gt,
+            Self::Le => koopa::ir::BinaryOp::Le,
+            Self::Ge => koopa::ir::BinaryOp::Ge,
         }
     }
 }

@@ -12,16 +12,16 @@ use common::TestError;
 
 /// Get the path to the yasysyc binary
 fn get_compiler_path() -> PathBuf {
-    // Try release build first, then debug
-    let release_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("target/release/yasysyc");
+    // Try debug build first, then release
     let debug_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("target/debug/yasysyc");
+    let release_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("target/release/yasysyc");
 
-    if release_path.exists() {
-        release_path
-    } else if debug_path.exists() {
+    if debug_path.exists() {
         debug_path
+    } else if release_path.exists() {
+        release_path
     } else {
         panic!("yasysyc binary not found. Run `cargo build` first.");
     }

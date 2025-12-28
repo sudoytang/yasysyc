@@ -28,6 +28,10 @@ pub enum Instruction {
     Mul { rd: Reg, rs1: Reg, rs2: Reg },
     Div { rd: Reg, rs1: Reg, rs2: Reg },
     Rem { rd: Reg, rs1: Reg, rs2: Reg },
+    And { rd: Reg, rs1: Reg, rs2: Reg },
+    Or { rd: Reg, rs1: Reg, rs2: Reg },
+    Xori { rd: Reg, rs: Reg, imm: i32 },
+    Slt { rd: Reg, rs1: Reg, rs2: Reg },  // set less than (signed)
     // Logical
     Seqz { rd: Reg, rs: Reg },  // set if equal to zero
     Snez { rd: Reg, rs: Reg },  // set if not equal to zero
@@ -50,6 +54,10 @@ impl Display for Instruction {
             Self::Mul { rd, rs1, rs2 } => write!(f, "  mul {}, {}, {}", rd, rs1, rs2),
             Self::Div { rd, rs1, rs2 } => write!(f, "  div {}, {}, {}", rd, rs1, rs2),
             Self::Rem { rd, rs1, rs2 } => write!(f, "  rem {}, {}, {}", rd, rs1, rs2),
+            Self::And { rd, rs1, rs2 } => write!(f, "  and {}, {}, {}", rd, rs1, rs2),
+            Self::Or { rd, rs1, rs2 } => write!(f, "  or {}, {}, {}", rd, rs1, rs2),
+            Self::Xori { rd, rs, imm } => write!(f, "  xori {}, {}, {}", rd, rs, imm),
+            Self::Slt { rd, rs1, rs2 } => write!(f, "  slt {}, {}, {}", rd, rs1, rs2),
             Self::Seqz { rd, rs } => write!(f, "  seqz {}, {}", rd, rs),
             Self::Snez { rd, rs } => write!(f, "  snez {}, {}", rd, rs),
             Self::Mv { rd, rs } => write!(f, "  mv {}, {}", rd, rs),

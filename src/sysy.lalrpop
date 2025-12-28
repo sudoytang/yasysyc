@@ -28,7 +28,32 @@ FuncType: FuncType = "int" => FuncType::Int;
 Block: Block = "{" <stmt: Stmt> "}" => Block { stmt };
 Stmt: Stmt = "return" <expr: Expr> ";" => Stmt::Return(ReturnStmt { expr });
 
-Expr: Expr = AddExpr;
+Expr: Expr = LogicOrExpr;
+
+LogicOrExpr: Expr = {
+    LogicAndExpr,
+    <e1: LogicOrExpr> "||" <e2: LogicAndExpr> => Expr::Binary(Box::new(e1), BinaryOp::Or, Box::new(e2)),
+}
+
+LogicAndExpr: Expr = {
+    EqExpr,
+    <e1: LogicAndExpr> "&&" <e2: EqExpr> => Expr::Binary(Box::new(e1), BinaryOp::And, Box::new(e2)),
+}
+
+EqExpr: Expr = {
+    RelExpr,
+    <e1: EqExpr> "==" <e2: RelExpr> => Expr::Binary(Box::new(e1), BinaryOp::Eq, Box::new(e2)),
+    <e1: EqExpr> "!=" <e2: RelExpr> => Expr::Binary(Box::new(e1), BinaryOp::Ne, Box::new(e2)),
+}
+
+RelExpr: Expr = {
+    AddExpr,
+    <e1: RelExpr> "<" <e2: AddExpr> => Expr::Binary(Box::new(e1), BinaryOp::Lt, Box::new(e2)),
+    <e1: RelExpr> ">" <e2: AddExpr> => Expr::Binary(Box::new(e1), BinaryOp::Gt, Box::new(e2)),
+    <e1: RelExpr> "<=" <e2: AddExpr> => Expr::Binary(Box::new(e1), BinaryOp::Le, Box::new(e2)),
+    <e1: RelExpr> ">=" <e2: AddExpr> => Expr::Binary(Box::new(e1), BinaryOp::Ge, Box::new(e2)),
+}
+
 
 AddExpr: Expr = {
     MulExpr,

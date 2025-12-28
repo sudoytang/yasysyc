@@ -314,6 +314,96 @@ impl<A: RegisterAllocator> AsmGenerator<A> {
                         });
                         self.store_value(*inst, Reg::T2);
                     }
+                    BinaryOp::Or => {
+                        // Logical OR: a || b => or rd, a, b; snez rd, rd
+                        // Result is 1 if either operand is non-zero, 0 otherwise
+                        let lhs_reg = self.load_value(func, lhs, Reg::T0);
+                        let rhs_reg = self.load_value(func, rhs, Reg::T1);
+                        self.emit(Instruction::Or {
+                            rd: Reg::T2,
+                            rs1: lhs_reg,
+                            rs2: rhs_reg,
+                        });
+                        self.emit(Instruction::Snez {
+                            rd: Reg::T2,
+                            rs: Reg::T2,
+                        });
+                        self.store_value(*inst, Reg::T2);
+                    }
+                    BinaryOp::And => {
+                        // Logical AND: a && b => snez t0, a; snez t1, b; and rd, t0, t1
+                        // Result is 1 if both operands are non-zero, 0 otherwise
+                        let lhs_reg = self.load_value(func, lhs, Reg::T0);
+                        let rhs_reg = self.load_value(func, rhs, Reg::T1);
+                        self.emit(Instruction::Snez {
+                            rd: Reg::T0,
+                            rs: lhs_reg,
+                        });
+                        self.emit(Instruction::Snez {
+                            rd: Reg::T1,
+                            rs: rhs_reg,
+                        });
+                        self.emit(Instruction::And {
+                            rd: Reg::T2,
+                            rs1: Reg::T0,
+                            rs2: Reg::T1,
+                        });
+                        self.store_value(*inst, Reg::T2);
+                    }
+                    BinaryOp::Lt => {
+                        // a < b => slt rd, a, b
+                        let lhs_reg = self.load_value(func, lhs, Reg::T0);
+                        let rhs_reg = self.load_value(func, rhs, Reg::T1);
+                        self.emit(Instruction::Slt {
+                            rd: Reg::T2,
+                            rs1: lhs_reg,
+                            rs2: rhs_reg,
+                        });
+                        self.store_value(*inst, Reg::T2);
+                    }
+                    BinaryOp::Gt => {
+                        // a > b => slt rd, b, a (swap operands)
+                        let lhs_reg = self.load_value(func, lhs, Reg::T0);
+                        let rhs_reg = self.load_value(func, rhs, Reg::T1);
+                        self.emit(Instruction::Slt {
+                            rd: Reg::T2,
+                            rs1: rhs_reg,
+                            rs2: lhs_reg,
+                        });
+                        self.store_value(*inst, Reg::T2);
+                    }
+                    BinaryOp::Le => {
+                        // a <= b => !(a > b) => !(b < a) => slt rd, b, a; xori rd, rd, 1
+                        let lhs_reg = self.load_value(func, lhs, Reg::T0);
+                        let rhs_reg = self.load_value(func, rhs, Reg::T1);
+                        self.emit(Instruction::Slt {
+                            rd: Reg::T2,
+                            rs1: rhs_reg,
+                            rs2: lhs_reg,
+                        });
+                        self.emit(Instruction::Xori {
+                            rd: Reg::T2,
+                            rs: Reg::T2,
+                            imm: 1,
+                        });
+                        self.store_value(*inst, Reg::T2);
+                    }
+                    BinaryOp::Ge => {
+                        // a >= b => !(a < b) => slt rd, a, b; xori rd, rd, 1
+                        let lhs_reg = self.load_value(func, lhs, Reg::T0);
+                        let rhs_reg = self.load_value(func, rhs, Reg::T1);
+                        self.emit(Instruction::Slt {
+                            rd: Reg::T2,
+                            rs1: lhs_reg,
+                            rs2: rhs_reg,
+                        });
+                        self.emit(Instruction::Xori {
+                            rd: Reg::T2,
+                            rs: Reg::T2,
+                            imm: 1,
+                        });
+                        self.store_value(*inst, Reg::T2);
+                    }
                     _ => unimplemented!("Unsupported binary operator: {:?}", binary.op()),
                 }
             }
