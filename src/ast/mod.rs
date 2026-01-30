@@ -61,12 +61,14 @@ impl Display for Block {
 #[derive(Debug)]
 pub enum Stmt {
     Return(ReturnStmt),
+    Assign(AssignStmt),
 }
 
 impl Display for Stmt {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Return(return_stmt) => write!(f, "{}", return_stmt),
+            Self::Assign(assign_stmt) => write!(f, "{}", assign_stmt),
         }
     }
 }
@@ -79,6 +81,18 @@ pub struct ReturnStmt {
 impl Display for ReturnStmt {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "return {};", self.expr)
+    }
+}
+
+#[derive(Debug)]
+pub struct AssignStmt {
+    pub lval: LVal,
+    pub expr: Expr,
+}
+
+impl Display for AssignStmt {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{} = {};", self.lval, self.expr)
     }
 }
 
@@ -99,13 +113,29 @@ impl Display for Ident {
     }
 }
 
+#[derive(Debug, Clone)]
+pub struct LVal {
+    pub ident: Ident,
+    pub indices: Vec<Expr>,
+}
+
+impl Display for LVal {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.ident)?;
+        for idx in &self.indices {
+            write!(f, "[{}]", idx)?;
+        }
+        Ok(())
+    }
+}
+
 #[non_exhaustive]
 #[derive(Debug)]
 pub enum Expr {
     Number(i32),
     Unary(UnaryOp, Box<Expr>),
     Binary(Box<Expr>, BinaryOp, Box<Expr>),
-    LVal(Ident),
+    LVal(LVal),
 }
 
 impl Clone for Expr {
@@ -114,7 +144,7 @@ impl Clone for Expr {
             Self::Number(number) => Self::Number(*number),
             Self::Unary(unary_op, expr) => Self::Unary(*unary_op, expr.clone()),
             Self::Binary(lhs, op, rhs) => Self::Binary(lhs.clone(), *op, rhs.clone()),
-            Self::LVal(id) => Self::LVal(id.clone()),
+            Self::LVal(lval) => Self::LVal(lval.clone()),
         }
     }
 }
@@ -127,7 +157,7 @@ impl Display for Expr {
             Self::Binary(lhs, op, rhs) => write!(f, "({} {} {})", lhs, op, rhs),
             // TODO: we don't know the precedence of binary operations and we are lazy
             // so that a pair of parentheses is added.
-            Self::LVal(id) => write!(f, "{}", id),
+            Self::LVal(lval) => write!(f, "{}", lval),
         }
     }
 }
@@ -222,12 +252,14 @@ impl Display for BlockItem {
 #[derive(Debug)]
 pub enum Decl {
     Const(ConstDecl),
+    Var(VarDecl),
 }
 
 impl Display for Decl {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Const(const_decl) => write!(f, "{}", const_decl),
+            Self::Var(var_decl) => write!(f, "{}", var_decl),
         }
     }
 }
@@ -253,6 +285,26 @@ impl Display for ConstDecl {
 }
 
 #[derive(Debug)]
+pub struct VarDecl {
+    pub btype: BType,
+    pub defs: Vec<VarDef>,
+}
+
+impl Display for VarDecl {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{} ", self.btype)?;
+        for (i, def) in self.defs.iter().enumerate() {
+            if i > 0 {
+                write!(f, ", ")?;
+            }
+            write!(f, "{}", def)?;
+        }
+        write!(f, ";")?;
+        Ok(())
+    }
+}
+
+#[derive(Debug)]
 pub struct ConstDef {
     pub id: Ident,
     pub init: ConstInit,
@@ -264,6 +316,22 @@ impl Display for ConstDef {
     }
 }
 
+#[derive(Debug)]
+pub struct VarDef {
+    pub id: Ident,
+    pub init: Option<VarInit>,
+}
+
+impl Display for VarDef {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.id)?;
+        if let Some(init) = &self.init {
+            write!(f, " = {}", init)?;
+        }
+        Ok(())
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct ConstInit {
     pub const_expr: ConstExpr,
@@ -272,6 +340,17 @@ pub struct ConstInit {
 impl Display for ConstInit {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.const_expr)
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct VarInit {
+    pub expr: Expr,
+}
+
+impl Display for VarInit {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.expr)
     }
 }
 

@@ -9,11 +9,15 @@ use koopa::ir::builder_traits::*;
 
 pub struct EmitContext {
     const_table: HashMap<Ident, ConstExpr>,
+    var_table: HashMap<Ident, Value>,
 }
 
 impl EmitContext {
     pub fn new() -> Self {
-        Self { const_table: HashMap::new() }
+        Self {
+            const_table: HashMap::new(),
+            var_table: HashMap::new(),
+        }
     }
 }
 
@@ -86,9 +90,10 @@ impl BlockItem {
 }
 
 impl Decl {
-    pub fn emit(&self, _func: &mut FunctionData, _bb: BasicBlock, context: &mut EmitContext) {
+    pub fn emit(&self, func: &mut FunctionData, bb: BasicBlock, context: &mut EmitContext) {
         match self {
             Self::Const(const_decl) => const_decl.emit(context),
+            Self::Var(var_decl) => var_decl.emit(func, bb, context),
         }
     }
 }
@@ -101,10 +106,32 @@ impl ConstDecl {
     }
 }
 
+impl VarDecl {
+    pub fn emit(&self, func: &mut FunctionData, bb: BasicBlock, context: &mut EmitContext) {
+        for def in &self.defs {
+            // alloc i32
+            let alloc = func.dfg_mut().new_value().alloc(Type::get_i32());
+            func.dfg_mut().set_value_name(alloc, Some(def.id.emit()));
+            func.layout_mut().bb_mut(bb).insts_mut().push_key_back(alloc).unwrap();
+
+            // store to var_table
+            context.var_table.insert(def.id.clone(), alloc);
+
+            // if has init, generate store
+            if let Some(init) = &def.init {
+                let value = init.expr.emit(func, bb, context);
+                let store = func.dfg_mut().new_value().store(value, alloc);
+                func.layout_mut().bb_mut(bb).insts_mut().push_key_back(store).unwrap();
+            }
+        }
+    }
+}
+
 impl Stmt {
     pub fn emit(&self, func: &mut FunctionData, bb: BasicBlock, context: &mut EmitContext) {
         match self {
             Self::Return(return_stmt) => return_stmt.emit(func, bb, context),
+            Self::Assign(assign_stmt) => assign_stmt.emit(func, bb, context),
         }
     }
 }
@@ -114,6 +141,15 @@ impl ReturnStmt {
         let value = self.expr.emit(func, bb, context);
         let ret_stmt = func.dfg_mut().new_value().ret(Some(value));
         func.layout_mut().bb_mut(bb).insts_mut().push_key_back(ret_stmt).unwrap();
+    }
+}
+
+impl AssignStmt {
+    pub fn emit(&self, func: &mut FunctionData, bb: BasicBlock, context: &mut EmitContext) {
+        let addr = *context.var_table.get(&self.lval.ident).unwrap();
+        let value = self.expr.emit(func, bb, context);
+        let store = func.dfg_mut().new_value().store(value, addr);
+        func.layout_mut().bb_mut(bb).insts_mut().push_key_back(store).unwrap();
     }
 }
 
@@ -180,9 +216,16 @@ impl Expr {
                     }
                 }
             }
-            Self::LVal(id) => {
-                let expr = context.const_table.get(id).unwrap();
-                expr.expr.emit(func, bb, context)
+            Self::LVal(lval) => {
+                // first check const_table
+                if let Some(expr) = context.const_table.get(&lval.ident) {
+                    return expr.expr.emit(func, bb, context);
+                }
+                // then check var_table
+                let addr = *context.var_table.get(&lval.ident).unwrap();
+                let load = func.dfg_mut().new_value().load(addr);
+                func.layout_mut().bb_mut(bb).insts_mut().push_key_back(load).unwrap();
+                load
             }
         }
     }

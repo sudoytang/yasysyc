@@ -35,7 +35,7 @@ BlockItem: BlockItem = {
 
 Decl: Decl = {
     <ConstDecl> => Decl::Const(<>),
-    // todo: var
+    <VarDecl> => Decl::Var(<>),
 }
 
 BType: BType = {
@@ -44,7 +44,14 @@ BType: BType = {
 
 ConstDef: ConstDef = <id: Ident> "=" <init: ConstInit> => ConstDef { id, init };
 
+VarDef: VarDef = <id: Ident> <init: ("=" <VarInit>)?> => VarDef { id, init };
+
+
 ConstInit: ConstInit = <const_expr: ConstExpr> => ConstInit { const_expr };
+
+VarInit: VarInit = <expr: Expr> => VarInit { expr };
+
+
 
 ConstExpr: ConstExpr = <expr: Expr> => ConstExpr { expr };
 
@@ -54,12 +61,21 @@ ConstDecl: ConstDecl = "const" <btype: BType> <def1: ConstDef> <rest: ("," <Cons
     ConstDecl { btype, defs }
 };
 
+VarDecl: VarDecl = <btype: BType> <def1: VarDef> <rest: ("," <VarDef>)*> ";" => {
+    let mut defs = vec![def1];
+    defs.extend(rest);
+    VarDecl { btype, defs }
+};
 
 
 
 
 
-Stmt: Stmt = "return" <expr: Expr> ";" => Stmt::Return(ReturnStmt { expr });
+
+Stmt: Stmt = {
+    "return" <expr: Expr> ";" => Stmt::Return(ReturnStmt { expr }),
+    <lval: LVal> "=" <expr: Expr> ";" => Stmt::Assign(AssignStmt { lval, expr }),
+}
 
 Expr: Expr = LogicOrExpr;
 
@@ -109,7 +125,7 @@ UnaryExpr: Expr = {
 PrimaryExpr: Expr = {
     <IntConst> => Expr::Number(<>),
     "(" <Expr> ")" => <>,
-    <LVal> => <>
+    <LVal> => Expr::LVal(<>),
 }
 
 UnaryOp: UnaryOp = {
@@ -125,4 +141,4 @@ IntConst: i32 = {
     r"0[xX][0-9a-fA-F]+" => i32::from_str_radix(&<>[2..], 16).unwrap(),
 }
 
-LVal: Expr = <id: Ident> => Expr::LVal(id);
+LVal: LVal = <ident: Ident> => LVal { ident, indices: vec![] };
