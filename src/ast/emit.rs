@@ -1,7 +1,28 @@
 use super::*;
 
+use std::collections::HashMap;
+
 use koopa::ir::{BasicBlock, FunctionData, Program, Type, Value};
 use koopa::ir::builder_traits::*;
+
+
+
+pub struct EmitContext {
+    const_table: HashMap<Ident, ConstExpr>,
+}
+
+impl EmitContext {
+    pub fn new() -> Self {
+        Self { const_table: HashMap::new() }
+    }
+}
+
+impl Default for EmitContext {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Ident {
     pub fn emit(&self) -> String {
         format!("@{}", self.value)
@@ -38,42 +59,70 @@ impl FuncDef {
             vec![],
             self.func_type.emit(),
         );
+        let mut context = EmitContext::new();
         let func =program.new_func(func);
         let func = program.func_mut(func);
-        self.block.emit(func);
+        self.block.emit(func, &mut context);
     }
 }
 
 impl Block {
-    pub fn emit(&self, func: &mut FunctionData) {
+    pub fn emit(&self, func: &mut FunctionData, context: &mut EmitContext) {
         let entry = func.dfg_mut().new_bb().basic_block(Some("%entry".into()));
         func.layout_mut().bbs_mut().push_key_back(entry).unwrap();
-        self.stmt.emit(func, entry);
+        for item in &self.items {
+            item.emit(func, entry, context);
+        }
+    }
+}
+
+impl BlockItem {
+    pub fn emit(&self, func: &mut FunctionData, bb: BasicBlock, context: &mut EmitContext) {
+        match self {
+            Self::Stmt(stmt) => stmt.emit(func, bb, context),
+            Self::Decl(decl) => decl.emit(func, bb, context),
+        }
+    }
+}
+
+impl Decl {
+    pub fn emit(&self, _func: &mut FunctionData, _bb: BasicBlock, context: &mut EmitContext) {
+        match self {
+            Self::Const(const_decl) => const_decl.emit(context),
+        }
+    }
+}
+
+impl ConstDecl {
+    pub fn emit(&self, context: &mut EmitContext) {
+        for def in &self.defs {
+            context.const_table.insert(def.id.clone(), def.init.const_expr.clone());
+        }
     }
 }
 
 impl Stmt {
-    pub fn emit(&self, func: &mut FunctionData, bb: BasicBlock) {
+    pub fn emit(&self, func: &mut FunctionData, bb: BasicBlock, context: &mut EmitContext) {
         match self {
-            Self::Return(return_stmt) => return_stmt.emit(func, bb),
+            Self::Return(return_stmt) => return_stmt.emit(func, bb, context),
         }
     }
 }
 
 impl ReturnStmt {
-    pub fn emit(&self, func: &mut FunctionData, bb: BasicBlock) {
-        let value = self.expr.emit(func, bb);
+    pub fn emit(&self, func: &mut FunctionData, bb: BasicBlock, context: &mut EmitContext) {
+        let value = self.expr.emit(func, bb, context);
         let ret_stmt = func.dfg_mut().new_value().ret(Some(value));
         func.layout_mut().bb_mut(bb).insts_mut().push_key_back(ret_stmt).unwrap();
     }
 }
 
 impl Expr {
-    pub fn emit(&self, func: &mut FunctionData, bb: BasicBlock) -> Value {
+    pub fn emit(&self, func: &mut FunctionData, bb: BasicBlock, context: &EmitContext) -> Value {
         match self {
             Self::Number(number) => func.dfg_mut().new_value().integer(*number),
             Self::Unary(unary_op, expr) => {
-                let value = expr.emit(func, bb);
+                let value = expr.emit(func, bb, context);
 
                 match unary_op {
                     // +x => x
@@ -97,8 +146,8 @@ impl Expr {
                 }
             }
             Self::Binary(lhs, op, rhs) => {
-                let lhs_val = lhs.emit(func, bb);
-                let rhs_val = rhs.emit(func, bb);
+                let lhs_val = lhs.emit(func, bb, context);
+                let rhs_val = rhs.emit(func, bb, context);
 
                 // Special handling for logical operators (Koopa IR only has bitwise Or/And)
                 match op {
@@ -130,6 +179,10 @@ impl Expr {
                         value
                     }
                 }
+            }
+            Self::LVal(id) => {
+                let expr = context.const_table.get(id).unwrap();
+                expr.expr.emit(func, bb, context)
             }
         }
     }

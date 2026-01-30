@@ -25,7 +25,40 @@ FuncDef: FuncDef = {
 }
 
 FuncType: FuncType = "int" => FuncType::Int;
-Block: Block = "{" <stmt: Stmt> "}" => Block { stmt };
+
+
+Block: Block = "{" <items: BlockItem*> "}" => Block { items };
+BlockItem: BlockItem = {
+    <Stmt> => BlockItem::Stmt(<>),
+    <Decl> => BlockItem::Decl(<>),
+}
+
+Decl: Decl = {
+    <ConstDecl> => Decl::Const(<>),
+    // todo: var
+}
+
+BType: BType = {
+    "int" => BType::Int,
+}
+
+ConstDef: ConstDef = <id: Ident> "=" <init: ConstInit> => ConstDef { id, init };
+
+ConstInit: ConstInit = <const_expr: ConstExpr> => ConstInit { const_expr };
+
+ConstExpr: ConstExpr = <expr: Expr> => ConstExpr { expr };
+
+ConstDecl: ConstDecl = "const" <btype: BType> <def1: ConstDef> <rest: ("," <ConstDef>)*> ";" => {
+    let mut defs = vec![def1];
+    defs.extend(rest);
+    ConstDecl { btype, defs }
+};
+
+
+
+
+
+
 Stmt: Stmt = "return" <expr: Expr> ";" => Stmt::Return(ReturnStmt { expr });
 
 Expr: Expr = LogicOrExpr;
@@ -75,7 +108,8 @@ UnaryExpr: Expr = {
 
 PrimaryExpr: Expr = {
     <IntConst> => Expr::Number(<>),
-    "(" <Expr> ")" => <>
+    "(" <Expr> ")" => <>,
+    <LVal> => <>
 }
 
 UnaryOp: UnaryOp = {
@@ -90,3 +124,5 @@ IntConst: i32 = {
     r"0[0-7]*" => i32::from_str_radix(<>, 8).unwrap(),
     r"0[xX][0-9a-fA-F]+" => i32::from_str_radix(&<>[2..], 16).unwrap(),
 }
+
+LVal: Expr = <id: Ident> => Expr::LVal(id);

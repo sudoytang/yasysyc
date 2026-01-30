@@ -42,12 +42,16 @@ impl Display for FuncType {
 
 #[derive(Debug)]
 pub struct Block {
-    pub stmt: Stmt,
+    pub items: Vec<BlockItem>,
 }
 
 impl Display for Block {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{{ {} }}", self.stmt)
+        write!(f, "{{")?;
+        for item in &self.items {
+            writeln!(f, "{}", item)?;
+        }
+        write!(f, "}}")
     }
 }
 
@@ -78,7 +82,7 @@ impl Display for ReturnStmt {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Hash, PartialEq, Eq, Clone)]
 pub struct Ident {
     pub value: String,
 }
@@ -101,6 +105,18 @@ pub enum Expr {
     Number(i32),
     Unary(UnaryOp, Box<Expr>),
     Binary(Box<Expr>, BinaryOp, Box<Expr>),
+    LVal(Ident),
+}
+
+impl Clone for Expr {
+    fn clone(&self) -> Self {
+        match self {
+            Self::Number(number) => Self::Number(*number),
+            Self::Unary(unary_op, expr) => Self::Unary(*unary_op, expr.clone()),
+            Self::Binary(lhs, op, rhs) => Self::Binary(lhs.clone(), *op, rhs.clone()),
+            Self::LVal(id) => Self::LVal(id.clone()),
+        }
+    }
 }
 
 impl Display for Expr {
@@ -111,6 +127,7 @@ impl Display for Expr {
             Self::Binary(lhs, op, rhs) => write!(f, "({} {} {})", lhs, op, rhs),
             // TODO: we don't know the precedence of binary operations and we are lazy
             // so that a pair of parentheses is added.
+            Self::LVal(id) => write!(f, "{}", id),
         }
     }
 }
@@ -169,5 +186,102 @@ impl Display for BinaryOp {
             Self::Le => write!(f, "<="),
             Self::Ge => write!(f, ">="),
         }
+    }
+}
+
+#[non_exhaustive]
+#[derive(Debug)]
+pub enum BType {
+    Int,
+}
+
+impl Display for BType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Int => write!(f, "int"),
+        }
+    }
+}
+
+#[derive(Debug)]
+pub enum BlockItem {
+    Stmt(Stmt),
+    Decl(Decl),
+}
+
+impl Display for BlockItem {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Stmt(stmt) => write!(f, "{}", stmt),
+            Self::Decl(decl) => write!(f, "{}", decl),
+        }
+    }
+}
+
+#[non_exhaustive]
+#[derive(Debug)]
+pub enum Decl {
+    Const(ConstDecl),
+}
+
+impl Display for Decl {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Const(const_decl) => write!(f, "{}", const_decl),
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct ConstDecl {
+    pub btype: BType,
+    pub defs: Vec<ConstDef>,
+}
+
+impl Display for ConstDecl {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "const {} ", self.btype)?;
+        for (i, def) in self.defs.iter().enumerate() {
+            if i > 0 {
+                write!(f, ", ")?;
+            }
+            write!(f, "{}", def)?;
+        }
+        write!(f, ";")?;
+        Ok(())
+    }
+}
+
+#[derive(Debug)]
+pub struct ConstDef {
+    pub id: Ident,
+    pub init: ConstInit,
+}
+
+impl Display for ConstDef {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{} = {}", self.id, self.init)
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct ConstInit {
+    pub const_expr: ConstExpr,
+}
+
+impl Display for ConstInit {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.const_expr)
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct ConstExpr {
+    pub expr: Expr,
+}
+
+impl Display for ConstExpr {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.expr)
     }
 }
